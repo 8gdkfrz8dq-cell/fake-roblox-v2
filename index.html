@@ -2,20 +2,82 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <title>Fake Roblox FPS RPG</title>
 
 <style>
-html,body{margin:0;padding:0;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
-#hud{position:fixed;top:10px;left:10px;z-index:10;font-size:14px}
-#shop{position:fixed;top:10px;right:10px;background:rgba(0,0,0,.85);padding:8px;font-size:12px;z-index:10}
-#shop button{width:100%;margin-top:4px}
-#gun{position:fixed;bottom:-12px;right:20px;width:160px;height:110px;background:linear-gradient(#555,#111);border-radius:8px;transform-origin:right center}
-#gun.kick{animation:kick .08s linear}
-@keyframes kick{0%{transform:translate(0,0)}50%{transform:translate(-18px,-8px)}100%{transform:translate(0,0)}}
-#crosshair{position:fixed;top:50%;left:50%;width:12px;height:12px;margin:-6px;border:2px solid white;border-radius:50%}
-#msg{position:fixed;bottom:22%;width:100%;text-align:center;font-size:20px;opacity:0;transition:.3s}
+html,body{margin:0;padding:0;background:#000;color:#fff;overflow:hidden;font-family:system-ui}
 canvas{display:block}
+
+/* HUD */
+#hud{position:fixed;top:10px;left:10px;font-size:14px;z-index:10}
+
+/* Gun */
+#gun{
+  position:fixed;
+  bottom:-10px;
+  right:20px;
+  width:180px;
+  height:120px;
+  background:linear-gradient(#666,#111);
+  border-radius:10px;
+  transform-origin:right center;
+}
+#gun.kick{animation:kick .08s linear}
+@keyframes kick{
+  0%{transform:translate(0,0)}
+  50%{transform:translate(-22px,-10px)}
+  100%{transform:translate(0,0)}
+}
+
+/* Crosshair */
+#crosshair{
+  position:fixed;
+  top:50%;
+  left:50%;
+  width:14px;
+  height:14px;
+  margin:-7px;
+  border:2px solid white;
+  border-radius:50%;
+  z-index:10;
+}
+
+/* Mobile controls */
+#joystick{
+  position:fixed;
+  bottom:40px;
+  left:40px;
+  width:120px;
+  height:120px;
+  border-radius:50%;
+  background:rgba(255,255,255,.1);
+  touch-action:none;
+}
+#stick{
+  position:absolute;
+  top:40px;
+  left:40px;
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  background:rgba(255,255,255,.4);
+}
+
+#shootBtn{
+  position:fixed;
+  bottom:60px;
+  right:40px;
+  width:90px;
+  height:90px;
+  border-radius:50%;
+  background:rgba(255,0,0,.4);
+  font-size:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  user-select:none;
+}
 </style>
 </head>
 
@@ -24,201 +86,124 @@ canvas{display:block}
 <div id="hud">
 ❤️ <span id="hp">100</span><br>
 🔫 <span id="ammo">12</span><br>
-☠️ <span id="kills">0</span><br>
-🧠 <span id="weaponName">Pistol</span><br>
-🎮 FPS: <span id="fps">60</span>
-</div>
-
-<div id="shop">
-<b>Shop</b><br>
-<button onclick="buyWeapon(1)">SMG (5 kills)</button>
-<button onclick="buyWeapon(2)">Shotgun (10 kills)</button>
-<button onclick="buyWeapon(3)">Joke Gun (3 kills)</button>
-<hr>
-<button onclick="toggleVsync()">V-Sync</button>
+☠️ <span id="kills">0</span>
 </div>
 
 <div id="crosshair"></div>
 <div id="gun"></div>
-<div id="msg"></div>
+
+<div id="joystick"><div id="stick"></div></div>
+<div id="shootBtn">SHOOT</div>
+
 <canvas id="game"></canvas>
 
 <script>
 /* ===== CORE ===== */
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
 function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
-resize(); addEventListener("resize",resize);
+resize();addEventListener("resize",resize);
 
-/* ===== DOM REFERENCES (FIX) ===== */
-const ammoEl = document.getElementById("ammo");
-const gun = document.getElementById("gun");
-const hp = document.getElementById("hp");
-const kills = document.getElementById("kills");
-const weaponName = document.getElementById("weaponName");
-const fps = document.getElementById("fps");
-
-/* ===== SETTINGS ===== */
-let vsync=true,targetFPS=60;
+const hpEl=hp,ammoEl=ammo,killsEl=kills,gun=document.getElementById("gun");
 
 /* ===== PLAYER ===== */
-let player={hp:100,kills:0,weapon:0,recoil:0,camZoom:1};
+let player={x:0,z:0,hp:100,kills:0,recoil:0};
 
-/* ===== WEAPONS ===== */
-const weapons=[
- {name:"Pistol",ammo:12,damage:30,spread:18,unlocked:true},
- {name:"SMG",ammo:30,damage:15,spread:35,unlocked:false},
- {name:"Shotgun",ammo:6,damage:60,spread:70,unlocked:false},
- {name:"Joke Gun",ammo:99,damage:1,spread:120,unlocked:false}
-];
-let ammo=weapons[0].ammo;
+/* ===== WEAPON ===== */
+let ammo=12;
 
 /* ===== WORLD ===== */
-let bots=[],walls=[],holes=[];
+let bots=[];
 function spawnBot(){
   bots.push({
-    x:Math.random()*canvas.width,
-    y:Math.random()*canvas.height,
-    z:Math.random()*600+200,
-    hp:40,
-    speed:0.4+Math.random()*0.6,
-    cooldown:40+Math.random()*60
+    x:(Math.random()-.5)*300,
+    z:600+Math.random()*600,
+    hp:40
   });
 }
 for(let i=0;i<6;i++)spawnBot();
-for(let i=0;i<10;i++)walls.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,z:Math.random()*700+300});
-
-/* ===== UI ===== */
-function msg(t){
-  const m=document.getElementById("msg");
-  m.textContent=t;
-  m.style.opacity=1;
-  setTimeout(()=>m.style.opacity=0,1200);
-}
-function updateHUD(){
-  hp.textContent=player.hp;
-  ammoEl.textContent=ammo;
-  kills.textContent=player.kills;
-  weaponName.textContent=weapons[player.weapon].name;
-}
-
-/* ===== SHOP ===== */
-function buyWeapon(i){
-  const cost=[0,5,10,3][i];
-  if(player.kills<cost) return msg("Not enough kills");
-  if(weapons[i].unlocked) return msg("Already owned");
-  player.kills-=cost;
-  weapons[i].unlocked=true;
-  player.weapon=i;
-  ammo=weapons[i].ammo;
-  msg("Bought "+weapons[i].name);
-  updateHUD();
-}
-
-/* ===== CONTROLS ===== */
-addEventListener("keydown",e=>{if(e.key==="q")switchWeapon()});
-addEventListener("click",shoot);
-addEventListener("touchstart",shoot);
 
 /* ===== SHOOT ===== */
 function shoot(){
-  if(ammo<=0){ammo=weapons[player.weapon].ammo;return}
+  if(ammo<=0){ammo=12;return}
   ammo--;
-  gun.classList.remove("kick"); void gun.offsetWidth; gun.classList.add("kick");
-  player.recoil=14;
+  gun.classList.remove("kick");void gun.offsetWidth;gun.classList.add("kick");
+  player.recoil=15;
 
-  let hit=false;
   bots.forEach((b,i)=>{
-    const dx=b.x-canvas.width/2, dy=b.y-canvas.height/2;
-    if(Math.hypot(dx,dy)<Math.random()*weapons[player.weapon].spread){
-      b.hp-=weapons[player.weapon].damage;
-      hit=true;
+    if(Math.abs(b.x)<40 && b.z<500){
+      b.hp-=30;
       if(b.hp<=0){
         bots.splice(i,1);
         spawnBot();
         player.kills++;
-        player.camZoom=1.25;
-        msg("KILL");
       }
     }
   });
-
-  if(!hit) holes.push({x:canvas.width/2+Math.random()*20-10,y:canvas.height/2+Math.random()*20-10,life:120});
   updateHUD();
 }
 
-/* ===== SWITCH ===== */
-function switchWeapon(){
-  let n=player.weapon;
-  do{n=(n+1)%weapons.length}while(!weapons[n].unlocked);
-  player.weapon=n;
-  ammo=weapons[n].ammo;
-  msg(weapons[n].name);
-  updateHUD();
+/* ===== HUD ===== */
+function updateHUD(){
+  hpEl.textContent=player.hp;
+  ammoEl.textContent=ammo;
+  killsEl.textContent=player.kills;
 }
 
-/* ===== VSYNC ===== */
-function toggleVsync(){vsync=!vsync;msg("V-Sync "+(vsync?"ON":"OFF"))}
+/* ===== JOYSTICK ===== */
+let moveX=0,moveZ=0;
+const stick=document.getElementById("stick");
+const joy=document.getElementById("joystick");
+
+joy.addEventListener("touchmove",e=>{
+  const r=60;
+  const t=e.touches[0];
+  const rect=joy.getBoundingClientRect();
+  let dx=t.clientX-(rect.left+r);
+  let dy=t.clientY-(rect.top+r);
+  const dist=Math.hypot(dx,dy);
+  if(dist>r){dx*=r/dist;dy*=r/dist}
+  stick.style.transform=`translate(${dx}px,${dy}px)`;
+  moveX=dx/r;
+  moveZ=dy/r;
+});
+
+joy.addEventListener("touchend",()=>{
+  stick.style.transform="translate(0,0)";
+  moveX=moveZ=0;
+});
+
+/* ===== SHOOT BUTTON ===== */
+shootBtn.addEventListener("touchstart",shoot);
+addEventListener("click",shoot);
 
 /* ===== LOOP ===== */
-let last=0;
-function loop(t){
-  if(!vsync && t-last<1000/targetFPS){requestAnimationFrame(loop);return}
-  last=t;
-
-  ctx.setTransform(player.camZoom,0,0,player.camZoom,0,0);
+function loop(){
   ctx.fillStyle="#111";
   ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.save();
-  ctx.translate(0,-player.recoil);
 
-  walls.forEach(w=>{
-    const s=300/w.z;
-    ctx.fillStyle="#333";
-    ctx.fillRect(w.x,w.y,80*s,80*s);
-    w.z-=1; if(w.z<120)w.z=800;
-  });
+  // movement
+  player.x+=moveX*4;
+  player.z+=moveZ*4;
+
+  ctx.save();
+  ctx.translate(canvas.width/2,canvas.height/2-player.recoil);
 
   bots.forEach(b=>{
-    const dx=canvas.width/2-b.x,dy=canvas.height/2-b.y,dist=Math.hypot(dx,dy)||1;
-    b.x+=(dx/dist)*b.speed;
-    b.y+=(dy/dist)*b.speed;
-
-    b.cooldown--;
-    if(b.cooldown<=0 && dist<220){
-      b.cooldown=60+Math.random()*60;
-      player.hp-=5;
-      msg("HIT!");
-      if(player.hp<=0){
-        msg("YOU DIED");
-        player.hp=100;
-        player.kills=0;
-      }
-    }
-
-    const s=300/b.z;
+    b.z-=2;
+    const scale=400/b.z;
+    const x=b.x*scale;
+    const size=40*scale;
     ctx.fillStyle="red";
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,14*s,0,Math.PI*2);
-    ctx.fill();
-    b.z-=1; if(b.z<120)b.z=800;
-  });
-
-  holes.forEach((h,i)=>{
-    ctx.fillStyle="#000";
-    ctx.beginPath();
-    ctx.arc(h.x,h.y,4,0,Math.PI*2);
-    ctx.fill();
-    if(--h.life<=0)holes.splice(i,1);
+    ctx.fillRect(x-size/2,-size/2,size,size);
+    if(b.z<100)b.z=800;
   });
 
   ctx.restore();
+
   player.recoil*=0.85;
-  player.camZoom+=(1-player.camZoom)*0.1;
-  fps.textContent=Math.round(1000/(t-last||16));
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+loop();
 </script>
 
 </body>
