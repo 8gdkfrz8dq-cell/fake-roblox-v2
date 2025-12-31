@@ -3,262 +3,234 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Top-Down Shooter</title>
+<title>Raw Top Down Shooter</title>
 
 <style>
 html,body{
-  margin:0;
-  padding:0;
-  background:#000;
-  overflow:hidden;
-  font-family:system-ui;
+  margin:0;padding:0;background:#000;overflow:hidden;
+  touch-action:none;font-family:system-ui;
 }
 canvas{display:block}
 
 /* SHOP */
 #shop{
-  position:fixed;
-  top:10px;
-  right:10px;
-  background:rgba(0,0,0,.85);
-  color:#fff;
-  padding:8px;
-  font-size:14px;
-  z-index:10;
+  position:fixed;top:10px;right:10px;
+  background:rgba(0,0,0,.8);color:#fff;
+  padding:8px;font-size:14px;z-index:10;
 }
-#shop button{
-  width:100%;
-  margin-top:6px;
-}
+#shop button{width:100%;margin-top:6px}
 
-/* SWITCH BUTTON */
-#switchBtn{
+/* GUN ICONS */
+#guns{
   position:fixed;
-  bottom:20px;
-  right:20px;
-  padding:12px 16px;
-  font-size:14px;
-  background:#222;
-  color:#fff;
-  border:1px solid #555;
+  top:50%;
+  left:10px;
+  transform:translateY(-50%);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
   z-index:10;
 }
+.gunIcon{
+  width:48px;height:48px;
+  background:#333;
+  border:2px solid #666;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:white;
+  font-size:10px;
+}
+.gunIcon.locked{opacity:.3}
+.gunIcon.active{border-color:#0af}
+
+/* JOYSTICKS */
+.joy{
+  position:fixed;bottom:30px;
+  width:120px;height:120px;
+  border-radius:50%;
+  background:rgba(255,255,255,.15);
+}
+.stick{
+  position:absolute;left:40px;top:40px;
+  width:40px;height:40px;
+  border-radius:50%;background:#ccc;
+}
+#moveJoy{left:30px}
+#aimJoy{right:160px}
 </style>
 </head>
 
 <body>
 
 <div id="shop">
-  <b>SHOP</b><br>
-  Kills: <span id="killCount">0</span><br>
-  <button onclick="buyWeapon(1)">SMG (5 kills)</button>
-  <button onclick="buyWeapon(2)">Shotgun (10 kills)</button>
+<b>SHOP</b><br>
+Kills: <span id="kills">0</span><br>
+<button onclick="buy(1)">SMG (5)</button>
+<button onclick="buy(2)">Shotgun (10)</button>
+<button onclick="buy(3)">Joke Gun (3)</button>
 </div>
 
-<button id="switchBtn">SWITCH</button>
+<div id="guns"></div>
+
+<div id="moveJoy" class="joy"><div class="stick"></div></div>
+<div id="aimJoy" class="joy"><div class="stick"></div></div>
 
 <canvas id="game"></canvas>
 
 <script>
-/* ===== CANVAS ===== */
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-function resize(){
-  canvas.width=innerWidth;
-  canvas.height=innerHeight;
+/* ===== CORE ===== */
+const c=game,x=c.getContext("2d");
+function resize(){c.width=innerWidth;c.height=innerHeight}
+resize();addEventListener("resize",resize);
+
+/* ===== AUDIO ===== */
+const A=new (window.AudioContext||webkitAudioContext)();
+function snd(f,d){
+  let o=A.createOscillator(),g=A.createGain();
+  o.frequency.value=f;o.connect(g);g.connect(A.destination);
+  g.gain.value=.15;o.start();o.stop(A.currentTime+d);
 }
-resize();
-addEventListener("resize",resize);
 
 /* ===== PLAYER ===== */
-const player={
-  x:canvas.width/2,
-  y:canvas.height/2,
-  size:28,
-  angle:0,
-  speed:2.5,
-  kills:0,
-  hp:100
-};
+const P={x:0,y:0,a:0,s:2.4,k:0};
 
 /* ===== WEAPONS ===== */
-const weapons=[
-  {name:"Pistol",damage:40,rate:180,length:28,unlocked:true},
-  {name:"SMG",damage:15,rate:90,length:34,unlocked:false},
-  {name:"Shotgun",damage:70,rate:500,length:30,unlocked:false}
+const W=[
+ {name:"Pistol",d:40,r:180,l:28,u:1},
+ {name:"SMG",d:15,r:90,l:34,u:0},
+ {name:"Shotgun",d:70,r:500,l:30,u:0},
+ {name:"Joke",d:5,r:60,l:40,u:0} // JOKE GUN
 ];
-let currentWeapon=0;
-const weapon={width:6,recoil:0};
+let CW=0,recoil=0;
 
 /* ===== ENEMIES ===== */
 const enemies=[];
-function spawnEnemy(){
-  enemies.push({
-    x:Math.random()*canvas.width,
-    y:Math.random()*canvas.height,
-    size:22,
-    hp:40,
-    speed:0.8
+function newRoom(){
+  enemies.length=0;
+  for(let i=0;i<6+Math.random()*4;i++)
+    enemies.push({x:Math.random()*c.width,y:Math.random()*c.height,hp:40,s:.6});
+  P.x=c.width/2;P.y=c.height/2;
+}
+newRoom();
+
+/* ===== UI: GUN ICONS ===== */
+const gunsDiv=document.getElementById("guns");
+function renderGunIcons(){
+  gunsDiv.innerHTML="";
+  W.forEach((w,i)=>{
+    const d=document.createElement("div");
+    d.className="gunIcon"+(w.u?"":" locked")+(i===CW?" active":"");
+    d.textContent=w.name;
+    d.onclick=()=>{
+      if(!w.u)return;
+      CW=i;
+      renderGunIcons();
+    };
+    gunsDiv.appendChild(d);
   });
 }
-for(let i=0;i<8;i++)spawnEnemy();
+renderGunIcons();
 
 /* ===== INPUT ===== */
-let move={x:0,y:0};
-let shooting=false;
+let mv={x:0,y:0},aim={x:1,y:0},shoot=0;
 
-/* keyboard */
-addEventListener("keydown",e=>{
-  if(e.key==="w")move.y=-1;
-  if(e.key==="s")move.y=1;
-  if(e.key==="a")move.x=-1;
-  if(e.key==="d")move.x=1;
-  if(e.key==="q") switchWeapon();
-});
-addEventListener("keyup",e=>{
-  if(e.key==="w"||e.key==="s")move.y=0;
-  if(e.key==="a"||e.key==="d")move.x=0;
-});
-
-/* mouse */
-addEventListener("mousemove",e=>aim(e.clientX,e.clientY));
-addEventListener("mousedown",()=>{shooting=true;shoot()});
-addEventListener("mouseup",()=>shooting=false);
-
-/* touch */
-let joyStart=null;
-addEventListener("touchstart",e=>{
-  shooting=true;
-  joyStart={x:e.touches[0].clientX,y:e.touches[0].clientY};
-  aim(joyStart.x,joyStart.y);
-  shoot();
-});
-addEventListener("touchmove",e=>{
-  const t=e.touches[0];
-  aim(t.clientX,t.clientY);
-  if(joyStart){
-    const dx=t.clientX-joyStart.x;
-    const dy=t.clientY-joyStart.y;
-    const d=Math.hypot(dx,dy)||1;
-    move.x=dx/d;
-    move.y=dy/d;
-  }
-});
-addEventListener("touchend",()=>{
-  shooting=false;
-  joyStart=null;
-  move.x=move.y=0;
-});
-
-/* ===== AIM ===== */
-function aim(x,y){
-  player.angle=Math.atan2(y-player.y,x-player.x);
+/* joysticks */
+function joy(el,cb){
+  const s=el.querySelector(".stick");
+  el.addEventListener("touchmove",e=>{
+    const r=el.getBoundingClientRect(),t=e.touches[0];
+    let dx=t.clientX-r.left-60,dy=t.clientY-r.top-60;
+    let d=Math.hypot(dx,dy)||1;
+    if(d>40){dx*=40/d;dy*=40/d}
+    s.style.transform=`translate(${dx}px,${dy}px)`;
+    cb(dx/40,dy/40);
+  });
+  el.addEventListener("touchend",()=>{
+    s.style.transform="translate(0,0)";
+    cb(0,0);
+  });
 }
+joy(moveJoy,(x,y)=>{mv.x=x;mv.y=y});
+joy(aimJoy,(x,y)=>{if(x||y){aim.x=x;aim.y=y;P.a=Math.atan2(y,x)}});
 
-/* ===== SHOOT ===== */
-function shoot(){
-  if(!shooting)return;
-  weapon.recoil=6;
+/* shoot */
+addEventListener("touchstart",e=>{
+  if(e.target.classList.contains("stick"))return;
+  shoot=1;fire();
+});
+addEventListener("touchend",()=>shoot=0);
+
+/* ===== FIRE ===== */
+function fire(){
+  if(!shoot)return;
+  recoil=6;
+  snd(W[CW].name==="Joke"?220:420,.05);
 
   enemies.forEach((e,i)=>{
-    const dx=e.x-player.x;
-    const dy=e.y-player.y;
-    const dist=Math.hypot(dx,dy);
-    const a=Math.atan2(dy,dx);
-    const diff=Math.abs(Math.atan2(Math.sin(a-player.angle),Math.cos(a-player.angle)));
-
-    if(dist<180&&diff<0.3){
-      e.hp-=weapons[currentWeapon].damage;
+    let dx=e.x-P.x,dy=e.y-P.y;
+    let dist=Math.hypot(dx,dy);
+    let a=Math.atan2(dy,dx);
+    let diff=Math.abs(Math.atan2(Math.sin(a-P.a),Math.cos(a-P.a)));
+    if(dist<180&&diff<.35){
+      e.hp-=W[CW].d;
       if(e.hp<=0){
         enemies.splice(i,1);
-        spawnEnemy();
-        player.kills++;
-        updateShop();
+        P.k++;snd(900,.08);
+        if(!enemies.length)newRoom();
       }
     }
   });
 
-  setTimeout(()=>shooting&&shoot(),weapons[currentWeapon].rate);
+  setTimeout(()=>shoot&&fire(),W[CW].r);
 }
 
 /* ===== SHOP ===== */
-function buyWeapon(i){
-  const cost=[0,5,10][i];
-  if(weapons[i].unlocked) return;
-  if(player.kills<cost) return;
-  player.kills-=cost;
-  weapons[i].unlocked=true;
-  currentWeapon=i;
-  updateShop();
-}
-function updateShop(){
-  document.getElementById("killCount").textContent=player.kills;
-}
-
-/* ===== WEAPON SWITCHING ===== */
-function switchWeapon(){
-  let i=currentWeapon;
-  do{
-    i=(i+1)%weapons.length;
-  }while(!weapons[i].unlocked);
-  currentWeapon=i;
-}
-document.getElementById("switchBtn").addEventListener("click",switchWeapon);
-
-/* ===== UPDATE ===== */
-function update(){
-  player.x+=move.x*player.speed;
-  player.y+=move.y*player.speed;
-
-  enemies.forEach(e=>{
-    const dx=player.x-e.x;
-    const dy=player.y-e.y;
-    const d=Math.hypot(dx,dy)||1;
-    e.x+=dx/d*e.speed;
-    e.y+=dy/d*e.speed;
-  });
-
-  weapon.recoil*=0.8;
-}
-
-/* ===== DRAW ===== */
-function draw(){
-  ctx.fillStyle="#111";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  enemies.forEach(e=>{
-    ctx.fillStyle="red";
-    ctx.fillRect(e.x-e.size/2,e.y-e.size/2,e.size,e.size);
-  });
-
-  ctx.fillStyle="#0af";
-  ctx.fillRect(
-    player.x-player.size/2,
-    player.y-player.size/2,
-    player.size,
-    player.size
-  );
-
-  ctx.save();
-  ctx.translate(player.x,player.y);
-  ctx.rotate(player.angle);
-  ctx.fillStyle="#ccc";
-  ctx.fillRect(
-    player.size/2-weapon.recoil,
-    -weapon.width/2,
-    weapons[currentWeapon].length,
-    weapon.width
-  );
-  ctx.restore();
+function buy(i){
+  const cost=[0,5,10,3][i];
+  if(W[i].u||P.k<cost)return;
+  P.k-=cost;W[i].u=1;CW=i;
+  renderGunIcons();
 }
 
 /* ===== LOOP ===== */
-function loop(){
-  update();
-  draw();
+(function loop(){
+  P.x+=mv.x*P.s;P.y+=mv.y*P.s;
+  enemies.forEach(e=>{
+    let dx=P.x-e.x,dy=P.y-e.y,d=Math.hypot(dx,dy)||1;
+    e.x+=dx/d*e.s;e.y+=dy/d*e.s;
+  });
+  recoil*=.8;
+
+  /* background */
+  x.fillStyle="#7ec8ff";x.fillRect(0,0,c.width,c.height);
+
+  /* sun */
+  x.fillStyle="yellow";
+  x.beginPath();x.arc(80,80,40,0,Math.PI*2);x.fill();
+  x.fillStyle="#000";
+  x.beginPath();x.arc(70,70,5,0,Math.PI*2);
+  x.arc(90,70,5,0,Math.PI*2);x.fill();
+  x.beginPath();x.arc(80,85,15,0,Math.PI);x.stroke();
+
+  enemies.forEach(e=>{
+    x.fillStyle="red";
+    x.fillRect(e.x-11,e.y-11,22,22);
+  });
+
+  x.fillStyle="#0af";
+  x.fillRect(P.x-14,P.y-14,28,28);
+
+  x.save();
+  x.translate(P.x,P.y);
+  x.rotate(P.a);
+  x.fillStyle=W[CW].name==="Joke"?"pink":"#555";
+  x.fillRect(14-recoil,-3,W[CW].l,6);
+  x.restore();
+
+  kills.textContent=P.k;
   requestAnimationFrame(loop);
-}
-loop();
+})();
 </script>
 
 </body>
